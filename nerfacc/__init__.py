@@ -6,7 +6,7 @@ from .data_specs import RayIntervals, RaySamples
 from .estimators.occ_grid import OccGridEstimator
 from .estimators.prop_net import PropNetEstimator
 from .estimators.vdb import VDBEstimator, traverse_vdbs
-from .grid import ray_aabb_intersect, traverse_grids
+from .grid import ray_aabb_intersect, ray_aabb_pairwise_intersect, traverse_grids
 from .losses import distortion
 from .pack import pack_info
 from .pdf import importance_sampling, searchsorted

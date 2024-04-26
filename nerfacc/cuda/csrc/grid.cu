@@ -312,6 +312,36 @@ __global__ void ray_aabb_intersect_kernel(
     }
 }
 
+__global__ void ray_aabb_pairwise_intersect_kernel(
+    const int32_t n_rays, float *rays_o, float *rays_d, float near, float far, float *aabbs,
+    // outputs
+    const float miss_value,
+    float *t_mins, float *t_maxs, bool *hits)
+{
+    int32_t numel = n_rays;
+    // parallelize over rays
+    for (int32_t tid = blockIdx.x * blockDim.x + threadIdx.x; tid < numel; tid += blockDim.x * gridDim.x)
+    {
+        int32_t ray_id = tid;
+        int32_t aabb_id = tid;
+
+        float t_min, t_max;
+        bool hit = device::ray_aabb_intersect(
+            SingleRaySpec(rays_o + ray_id * 3, rays_d + ray_id * 3, near, far), 
+            AABBSpec(aabbs + aabb_id * 6), 
+            t_min, t_max
+        );
+        if (hit) {   
+            t_mins[tid] = t_min;
+            t_maxs[tid] = t_max;
+        } else {
+            t_mins[tid] = miss_value;
+            t_maxs[tid] = miss_value;
+        }
+        hits[tid] = hit;
+    }
+}
+
 
 }  // namespace device
 }  // namespace
@@ -514,6 +544,48 @@ std::vector<torch::Tensor> ray_aabb_intersect(
         t_mins.data_ptr<float>(),   // [n_rays, n_aabbs]
         t_maxs.data_ptr<float>(),   // [n_rays, n_aabbs]
         hits.data_ptr<bool>());     // [n_rays, n_aabbs]
+
+    return {t_mins, t_maxs, hits};
+}
+
+
+std::vector<torch::Tensor> ray_aabb_pairwise_intersect(
+    const torch::Tensor rays_o, // [n_rays, 3]
+    const torch::Tensor rays_d, // [n_rays, 3]
+    const torch::Tensor aabbs,  // [n_rays, 6]
+    const float near_plane,
+    const float far_plane, 
+    const float miss_value)  
+{
+    DEVICE_GUARD(rays_o);
+
+    int32_t n_rays = rays_o.size(0);
+
+    at::cuda::CUDAStream stream = at::cuda::getCurrentCUDAStream();
+    int32_t max_threads = 512; 
+    int32_t max_blocks = 65535;
+    dim3 threads = dim3(min(max_threads, n_rays));
+    dim3 blocks = dim3(min(max_blocks, ceil_div<int32_t>(n_rays, threads.x)));
+
+    // outputs
+    torch::Tensor t_mins = torch::empty({n_rays}, rays_o.options());
+    torch::Tensor t_maxs = torch::empty({n_rays}, rays_o.options());
+    torch::Tensor hits = torch::empty({n_rays}, rays_d.options().dtype(torch::kBool));
+
+    device::ray_aabb_pairwise_intersect_kernel<<<blocks, threads, 0, stream>>>(
+        // rays
+        n_rays,
+        rays_o.data_ptr<float>(),  // [n_rays, 3]
+        rays_d.data_ptr<float>(),  // [n_rays, 3]
+        near_plane,
+        far_plane,
+        // aabbs
+        aabbs.data_ptr<float>(),   // [n_rays, 6]
+        // outputs
+        miss_value,
+        t_mins.data_ptr<float>(),   // [n_rays, 1]
+        t_maxs.data_ptr<float>(),   // [n_rays, 1]
+        hits.data_ptr<bool>());     // [n_rays, 1]
 
     return {t_mins, t_maxs, hits};
 }

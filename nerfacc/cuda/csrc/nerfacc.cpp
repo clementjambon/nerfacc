@@ -72,6 +72,13 @@ std::vector<torch::Tensor> ray_aabb_intersect(
     const float near_plane,
     const float far_plane, 
     const float miss_value);
+std::vector<torch::Tensor> ray_aabb_pairwise_intersect(
+    const torch::Tensor rays_o, // [n_rays, 3]
+    const torch::Tensor rays_d, // [n_rays, 3]
+    const torch::Tensor aabbs,  // [n_rays, 6]
+    const float near_plane,
+    const float far_plane, 
+    const float miss_value);
 std::tuple<RaySegmentsSpec, RaySegmentsSpec, torch::Tensor> traverse_grids(
     // rays
     const torch::Tensor rays_o, // [n_rays, 3]
@@ -141,6 +148,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     _REG_FUNC(exclusive_prod_cub_backward);
 
     _REG_FUNC(ray_aabb_intersect);
+    _REG_FUNC(ray_aabb_pairwise_intersect);
     _REG_FUNC(traverse_grids);
     _REG_FUNC(searchsorted);
 

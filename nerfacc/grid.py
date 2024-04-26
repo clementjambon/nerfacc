@@ -1,6 +1,7 @@
 """
 Copyright (c) 2022 Ruilong Li, UC Berkeley.
 """
+
 from typing import Optional, Tuple
 
 import torch
@@ -50,6 +51,46 @@ def ray_aabb_intersect(
     )
     return t_mins, t_maxs, hits
 
+@torch.no_grad()
+def ray_aabb_pairwise_intersect(
+    rays_o: Tensor,
+    rays_d: Tensor,
+    aabbs: Tensor,
+    near_plane: float = -float("inf"),
+    far_plane: float = float("inf"),
+    miss_value: float = float("inf"),
+) -> Tuple[Tensor, Tensor, Tensor]:
+    """Ray-AABB intersection.
+
+    Args:
+        rays_o: (n_rays, 3) Ray origins.
+        rays_d: (n_rays, 3) Normalized ray directions.
+        aabbs: (n_rays, 6) Axis-aligned bounding boxes {xmin, ymin, zmin, xmax, ymax, zmax}.
+        near_plane: Optional. Near plane. Default to -infinity.
+        far_plane: Optional. Far plane. Default to infinity.
+        miss_value: Optional. Value to use for tmin and tmax when there is no intersection.
+            Default to infinity.
+
+    Returns:
+        A tuple of {Tensor, Tensor, BoolTensor}:
+
+        - **t_mins**: (n_rays, 1) tmin for each ray-AABB pair.
+        - **t_maxs**: (n_rays, 1) tmax for each ray-AABB pair.
+        - **hits**: (n_rays, 1) whether each ray-AABB pair intersects.
+    """
+    assert rays_o.ndim == 2 and rays_o.shape[-1] == 3
+    assert rays_d.ndim == 2 and rays_d.shape[-1] == 3
+    assert aabbs.ndim == 2 and aabbs.shape[-1] == 6
+    assert rays_o.shape[0] == aabbs.shape[0]
+    t_mins, t_maxs, hits = _C.ray_aabb_pairwise_intersect(
+        rays_o.contiguous(),
+        rays_d.contiguous(),
+        aabbs.contiguous(),
+        near_plane,
+        far_plane,
+        miss_value,
+    )
+    return t_mins, t_maxs, hits
 
 def _ray_aabb_intersect(
     rays_o: Tensor,

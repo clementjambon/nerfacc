@@ -20,6 +20,7 @@ RaySegmentsSpec = _make_lazy_cuda_func("RaySegmentsSpec")
 
 # grid
 ray_aabb_intersect = _make_lazy_cuda_func("ray_aabb_intersect")
+ray_aabb_pairwise_intersect = _make_lazy_cuda_func("ray_aabb_pairwise_intersect")
 traverse_grids = _make_lazy_cuda_func("traverse_grids")
 
 # scan
