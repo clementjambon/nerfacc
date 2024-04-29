@@ -83,6 +83,14 @@ class OccGridEstimator(AbstractEstimator):
         self.register_buffer("grid_indices", grid_indices, persistent=False)
 
     @torch.no_grad()
+    def set_binaries(self, 
+        binaries: torch.Tensor
+    ):
+        self.binaries = binaries
+
+        
+
+    @torch.no_grad()
     def sampling(
         self,
         # rays
