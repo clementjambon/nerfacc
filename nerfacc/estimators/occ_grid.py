@@ -411,6 +411,45 @@ class OccGridEstimator(AbstractEstimator):
         thre = torch.clamp(self.occs[self.occs >= 0].mean(), max=occ_thre)
         self.binaries = (self.occs > thre).view(self.binaries.shape)
 
+    @torch.no_grad()
+    def _update_hard(
+        self,
+        occ_eval_fn: Callable,
+        occ_thre: float = 0.01,
+        n_samples: int = 64,
+        chunks: int = 2,
+    ) -> None:
+        """Update the occ field in a hard way (mostly to export)."""
+        # sample cells
+        lvl_indices = self._get_all_cells()
+
+        for lvl, indices in enumerate(lvl_indices):
+            # infer occupancy: density * step_size
+            grid_coords = self.grid_coords[indices]
+            x = (
+                grid_coords[:, None, :] + torch.rand(grid_coords.shape[0], n_samples, grid_coords.shape[1], dtype=torch.float32, device=grid_coords.device)
+            ) / self.resolution
+            # x = (
+            #     grid_coords + torch.rand_like(grid_coords, dtype=torch.float32)
+            # ) / self.resolution
+            # voxel coordinates [0, 1]^3 -> world
+            x = self.aabbs[lvl, :3] + x * (
+                self.aabbs[lvl, 3:] - self.aabbs[lvl, :3]
+            )
+            occ = torch.empty(grid_coords.shape[0], n_samples, device=grid_coords.device)
+            for i in range(0, n_samples, chunks):
+                occ[:, i: i+chunks] = occ_eval_fn(x[:, i:i+chunks]).squeeze(-1)
+            occ = occ.max(1)[0]
+            # ema update
+            cell_ids = lvl * self.cells_per_lvl + indices
+            self.occs[cell_ids] = occ
+            # suppose to use scatter max but emperically it is almost the same.
+            # self.occs, _ = scatter_max(
+            #     occ, indices, dim=0, out=self.occs * ema_decay
+            # )
+        thre = torch.clamp(self.occs[self.occs >= 0].mean(), max=occ_thre)
+        self.binaries = (self.occs > thre).view(self.binaries.shape)
+
 
 def _meshgrid3d(
     res: Tensor, device: Union[torch.device, str] = "cpu"
