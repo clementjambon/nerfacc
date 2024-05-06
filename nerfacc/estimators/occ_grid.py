@@ -66,29 +66,21 @@ class OccGridEstimator(AbstractEstimator):
         # Buffers
         self.register_buffer("resolution", resolution)  # [3]
         self.register_buffer("aabbs", aabbs)  # [n_aabbs, 6]
-        self.register_buffer(
-            "occs", torch.zeros(self.levels * self.cells_per_lvl)
-        )
+        self.register_buffer("occs", torch.zeros(self.levels * self.cells_per_lvl))
         self.register_buffer(
             "binaries",
             torch.zeros([levels] + resolution.tolist(), dtype=torch.bool),
         )
 
         # Grid coords & indices
-        grid_coords = _meshgrid3d(resolution).reshape(
-            self.cells_per_lvl, self.DIM
-        )
+        grid_coords = _meshgrid3d(resolution).reshape(self.cells_per_lvl, self.DIM)
         self.register_buffer("grid_coords", grid_coords, persistent=False)
         grid_indices = torch.arange(self.cells_per_lvl)
         self.register_buffer("grid_indices", grid_indices, persistent=False)
 
     @torch.no_grad()
-    def set_binaries(self, 
-        binaries: torch.Tensor
-    ):
+    def set_binaries(self, binaries: torch.Tensor):
         self.binaries = binaries
-
-        
 
     @torch.no_grad()
     def sampling(
@@ -289,9 +281,7 @@ class OccGridEstimator(AbstractEstimator):
             chunk: The chunk size to split the cells (to avoid OOM)
         """
         assert K.dim() == 3 and K.shape[1:] == (3, 3)
-        assert c2w.dim() == 3 and (
-            c2w.shape[1:] == (3, 4) or c2w.shape[1:] == (4, 4)
-        )
+        assert c2w.dim() == 3 and (c2w.shape[1:] == (3, 4) or c2w.shape[1:] == (4, 4))
         assert K.shape[0] == c2w.shape[0] or K.shape[0] == 1
 
         N_cams = c2w.shape[0]
@@ -320,15 +310,11 @@ class OccGridEstimator(AbstractEstimator):
                     & (uv[:, 1] >= 0)
                     & (uv[:, 1] < height)
                 )
-                covered_by_cam = (
-                    uvd[:, 2] >= near_plane
-                ) & in_image  # (N_cams, chunk)
+                covered_by_cam = (uvd[:, 2] >= near_plane) & in_image  # (N_cams, chunk)
                 # if the cell is visible by at least one camera
                 count = covered_by_cam.sum(0) / N_cams
 
-                too_near_to_cam = (
-                    uvd[:, 2] < near_plane
-                ) & in_image  # (N, chunk)
+                too_near_to_cam = (uvd[:, 2] < near_plane) & in_image  # (N, chunk)
                 # if the cell is too close (in front) to any camera
                 too_near_to_any_cam = too_near_to_cam.any(0)
                 # a valid cell should be visible by at least one camera and not too close to any camera
@@ -395,15 +381,11 @@ class OccGridEstimator(AbstractEstimator):
                 grid_coords + torch.rand_like(grid_coords, dtype=torch.float32)
             ) / self.resolution
             # voxel coordinates [0, 1]^3 -> world
-            x = self.aabbs[lvl, :3] + x * (
-                self.aabbs[lvl, 3:] - self.aabbs[lvl, :3]
-            )
+            x = self.aabbs[lvl, :3] + x * (self.aabbs[lvl, 3:] - self.aabbs[lvl, :3])
             occ = occ_eval_fn(x).squeeze(-1)
             # ema update
             cell_ids = lvl * self.cells_per_lvl + indices
-            self.occs[cell_ids] = torch.maximum(
-                self.occs[cell_ids] * ema_decay, occ
-            )
+            self.occs[cell_ids] = torch.maximum(self.occs[cell_ids] * ema_decay, occ)
             # suppose to use scatter max but emperically it is almost the same.
             # self.occs, _ = scatter_max(
             #     occ, indices, dim=0, out=self.occs * ema_decay
@@ -427,18 +409,25 @@ class OccGridEstimator(AbstractEstimator):
             # infer occupancy: density * step_size
             grid_coords = self.grid_coords[indices]
             x = (
-                grid_coords[:, None, :] + torch.rand(grid_coords.shape[0], n_samples, grid_coords.shape[1], dtype=torch.float32, device=grid_coords.device)
+                grid_coords[:, None, :]
+                + torch.rand(
+                    grid_coords.shape[0],
+                    n_samples,
+                    grid_coords.shape[1],
+                    dtype=torch.float32,
+                    device=grid_coords.device,
+                )
             ) / self.resolution
             # x = (
             #     grid_coords + torch.rand_like(grid_coords, dtype=torch.float32)
             # ) / self.resolution
             # voxel coordinates [0, 1]^3 -> world
-            x = self.aabbs[lvl, :3] + x * (
-                self.aabbs[lvl, 3:] - self.aabbs[lvl, :3]
+            x = self.aabbs[lvl, :3] + x * (self.aabbs[lvl, 3:] - self.aabbs[lvl, :3])
+            occ = torch.empty(
+                grid_coords.shape[0], n_samples, device=grid_coords.device
             )
-            occ = torch.empty(grid_coords.shape[0], n_samples, device=grid_coords.device)
             for i in range(0, n_samples, chunks):
-                occ[:, i: i+chunks] = occ_eval_fn(x[:, i:i+chunks]).squeeze(-1)
+                occ[:, i : i + chunks] = occ_eval_fn(x[:, i : i + chunks]).squeeze(-1)
             occ = occ.max(1)[0]
             # ema update
             cell_ids = lvl * self.cells_per_lvl + indices
@@ -447,13 +436,11 @@ class OccGridEstimator(AbstractEstimator):
             # self.occs, _ = scatter_max(
             #     occ, indices, dim=0, out=self.occs * ema_decay
             # )
-        thre = torch.clamp(self.occs[self.occs >= 0].mean(), max=occ_thre)
-        self.binaries = (self.occs > thre).view(self.binaries.shape)
+        # thre = torch.clamp(self.occs[self.occs >= 0].mean(), max=occ_thre)
+        self.binaries = (self.occs > occ_thre).view(self.binaries.shape)
 
 
-def _meshgrid3d(
-    res: Tensor, device: Union[torch.device, str] = "cpu"
-) -> Tensor:
+def _meshgrid3d(res: Tensor, device: Union[torch.device, str] = "cpu") -> Tensor:
     """Create 3D grid coordinates."""
     assert len(res) == 3
     res = res.tolist()
